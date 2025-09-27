@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wandb-sweep-${SWEEP_ID}
+spec:
+  parallelism: 2 # parallel agents
+  completions: 6 # total runs
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: agent
+        image: pytorch/pytorch:latest
+        command:
+          - sh
+          - -c
+          - |
+            pip install wandb torch numpy
+            wandb agent username/uncategorized/${SWEEP_ID}
+        env:
+        - name: WANDB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wandb-credentials
+              key: api-key
+        resources:
+            requests:
+              memory: 5Gi
+              cpu: "5"
+              nvidia.com/a100: "1"
+            limits:
+              memory: 5Gi
+              cpu: "6"
+              nvidia.com/a100: "1"
