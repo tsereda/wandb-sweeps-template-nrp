@@ -14,8 +14,13 @@ spec:
           - sh
           - -c
           - |
+            sudo apt-get update && sudo apt-get install -y p7zip-full wget git
             pip install wandb torch numpy
-            wandb agent tgsereda/uncategorized/{SWEEP_ID}
+            git clone https://github.com/tsereda/wandb-sweeps-template-nrp.git
+            cd wandb-sweeps-template-nrp
+            pwd
+            wandb agent timgsereda/wandb-sweeps-template-nrp/{SWEEP_ID} #update 
+            tail -f /dev/null
         env:
         - name: WANDB_API_KEY
           valueFrom:
