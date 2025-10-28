@@ -1,10 +1,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: wandb-sweep-${SWEEP_ID}
+  name: wandb-sweep-{SWEEP_ID}
 spec:
-  parallelism: 2 # parallel agents
-  completions: 6 # total runs
+  completions: 1
   template:
     spec:
       restartPolicy: OnFailure
@@ -16,7 +15,7 @@ spec:
           - -c
           - |
             pip install wandb torch numpy
-            wandb agent username/uncategorized/${SWEEP_ID}
+            wandb agent tgsereda/uncategorized/{SWEEP_ID}
         env:
         - name: WANDB_API_KEY
           valueFrom:
