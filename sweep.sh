@@ -1,24 +1,6 @@
 #!/bin/bash
 
-set -e  # Exit on any error
-
-echo "=== Wandb Sweep Creation and Kubernetes Deployment ==="
-
-# Check for required files
-SWEEP_FILE=""
-if [ -f "sweep.yml" ]; then
-    SWEEP_FILE="sweep.yml"
-elif [ -f "sweep.py" ]; then
-    SWEEP_FILE="sweep.py"
-else
-    echo "Error: Neither sweep.yml nor sweep.py found in current directory"
-    exit 1
-fi
-
-if [ ! -f "template.yml" ]; then
-    echo "Error: template.yml not found in current directory"
-    exit 1
-fi
+SWEEP_FILE="sweep.yml"
 
 echo "Using sweep file: $SWEEP_FILE"
 
