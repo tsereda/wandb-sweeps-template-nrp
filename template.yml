@@ -1,14 +1,21 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: wandb-sweep-{SWEEP_ID}
+  name: sweep-{SWEEP_NAME}-{SWEEP_NUMBER}
+  labels:
+    experiment: {SWEEP_NAME}
+    job-number: "{SWEEP_NUMBER}"
 spec:
   completions: 1
   template:
+    metadata:
+      labels:
+        experiment: {SWEEP_NAME}
+        job-number: "{SWEEP_NUMBER}"
     spec:
       restartPolicy: OnFailure
       containers:
-      - name: agent
+      - name: wandb-agent-{SWEEP_NAME}
         image: pytorch/pytorch:latest
         command:
           - sh

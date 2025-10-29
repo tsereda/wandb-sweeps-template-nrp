@@ -1,5 +1,6 @@
 program: train.py
 method: bayes
+name: my-experiment
 metric:
   name: val_loss
   goal: minimize

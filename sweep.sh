@@ -4,6 +4,31 @@ SWEEP_FILE="sweep.yml"
 
 echo "Using sweep file: $SWEEP_FILE"
 
+# Extract sweep name from sweep.yml
+SWEEP_NAME=$(grep "^name:" "$SWEEP_FILE" | cut -d':' -f2 | sed 's/^ *//;s/ *#.*//')
+
+if [ -z "$SWEEP_NAME" ]; then
+    echo "Warning: No 'name' field found in $SWEEP_FILE, using default name 'sweep'"
+    SWEEP_NAME="sweep"
+else
+    # Clean the sweep name for kubernetes naming (lowercase, no spaces, etc.)
+    SWEEP_NAME=$(echo "$SWEEP_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+    echo "Extracted sweep name: $SWEEP_NAME"
+fi
+
+# Find the next available number by checking existing jobs
+echo ""
+echo "Finding next available job number..."
+EXISTING_JOBS=$(kubectl get jobs -o name 2>/dev/null | grep "wandb-sweep-${SWEEP_NAME}-" | sed "s/.*${SWEEP_NAME}-//" | sort -n)
+if [ -z "$EXISTING_JOBS" ]; then
+    SWEEP_NUMBER=1
+else
+    LAST_NUMBER=$(echo "$EXISTING_JOBS" | tail -1)
+    SWEEP_NUMBER=$((LAST_NUMBER + 1))
+fi
+
+echo "Using sweep number: $SWEEP_NUMBER"
+
 # Handle command line argument for manual sweep ID
 if [ $# -eq 1 ]; then
     SWEEP_ID="$1"
@@ -54,26 +79,35 @@ fi
 echo "✓ Extracted sweep ID: $SWEEP_ID"
 
 # Step 2: Generate agent config file
+JOB_NAME="wandb-sweep-${SWEEP_NAME}-${SWEEP_NUMBER}"
+CONFIG_FILE="agent-${SWEEP_NAME}-${SWEEP_NUMBER}.yml"
+
 echo ""
-echo "2. Generating agent config with sweep ID: $SWEEP_ID"
+echo "2. Generating agent config:"
+echo "   Job name: $JOB_NAME"
+echo "   Config file: $CONFIG_FILE"
+echo "   Sweep ID: $SWEEP_ID"
 
-# Replace {SWEEP_ID} in template
-sed "s/{SWEEP_ID}/$SWEEP_ID/g" template.yml > "agent-$SWEEP_ID.yml"
+# Replace {SWEEP_NAME}, {SWEEP_NUMBER}, and {SWEEP_ID} in template
+sed -e "s/{SWEEP_NAME}/$SWEEP_NAME/g" -e "s/{SWEEP_NUMBER}/$SWEEP_NUMBER/g" -e "s/{SWEEP_ID}/$SWEEP_ID/g" template.yml > "$CONFIG_FILE"
 
-echo "✓ Created: agent-$SWEEP_ID.yml"
+echo "✓ Created: $CONFIG_FILE"
 
 # Step 3: Apply kubernetes configuration
 echo ""
 echo "3. Applying kubernetes configuration..."
 
-kubectl apply -f "agent-$SWEEP_ID.yml"
+kubectl apply -f "$CONFIG_FILE"
 
-echo "✓ Applied agent-$SWEEP_ID.yml to kubernetes"
+echo "✓ Applied $CONFIG_FILE to kubernetes"
 
 echo ""
 echo "=== Deployment Complete ==="
+echo "Job name: $JOB_NAME"
+echo "Sweep Name: $SWEEP_NAME"
+echo "Sweep Number: $SWEEP_NUMBER"
 echo "Sweep ID: $SWEEP_ID"
-echo "Agent config: agent-$SWEEP_ID.yml"
+echo "Agent config: $CONFIG_FILE"
 echo "Kubernetes deployment applied successfully!"
 echo ""
 if [ -n "$FULL_AGENT_CMD" ]; then
