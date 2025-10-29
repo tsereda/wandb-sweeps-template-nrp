@@ -15,8 +15,8 @@ else
     exit 1
 fi
 
-if [ ! -f "template.ym" ]; then
-    echo "Error: template.ym not found in current directory"
+if [ ! -f "template.yml" ]; then
+    echo "Error: template.yml not found in current directory"
     exit 1
 fi
 
@@ -76,7 +76,7 @@ echo ""
 echo "2. Generating agent config with sweep ID: $SWEEP_ID"
 
 # Replace {SWEEP_ID} in template
-sed "s/{SWEEP_ID}/$SWEEP_ID/g" template.ym > "agent-$SWEEP_ID.yml"
+sed "s/{SWEEP_ID}/$SWEEP_ID/g" template.yml > "agent-$SWEEP_ID.yml"
 
 echo "✓ Created: agent-$SWEEP_ID.yml"
 
