@@ -2,12 +2,12 @@
 #
 # launch-sweep.sh
 #
-# Creates a new wandb sweep and launches one or more agents
+# Creates a wandb sweep and launches one or more agents
 # as Kubernetes jobs.
 #
 # Usage:
-#   ./launch-sweep.sh       # Creates a new sweep, launches 1 agent
-#   ./launch-sweep.sh 5     # Creates a new sweep, launches 5 agents
+#   ./launch-sweep.sh       # Creates a sweep, launches 1 agent
+#   ./launch-sweep.sh 5     # Creates a sweep, launches 5 agents
 #
 
 # --- Defaults ---
@@ -17,7 +17,6 @@ SWEEP_FILE="sweep.yml"
 # --- Parse positional argument for number of agents ---
 if [ $# -eq 1 ]; then
     NUM_AGENTS=$1
-    echo "Will launch $NUM_AGENTS agent(s)."
 elif [ $# -gt 1 ]; then
     echo "Error: Too many arguments."
     echo "Usage: $0 [NUM_AGENTS]"
@@ -40,7 +39,7 @@ fi
 
 
 # --- 2. Create New Sweep ID ---
-echo "Creating new wandb sweep from $SWEEP_FILE..."
+echo "Creating wandb sweep from $SWEEP_FILE..."
 
 # Capture both stdout and stderr
 SWEEP_OUTPUT=$(wandb sweep "$SWEEP_FILE" 2>&1)
@@ -71,7 +70,6 @@ if [ -z "$SWEEP_ID" ]; then
     echo "$SWEEP_OUTPUT"
     exit 1
 fi
-echo "✓ Extracted new sweep ID: $SWEEP_ID"
 
 
 # --- 3. Check for Existing Jobs ---
@@ -155,7 +153,6 @@ fi
 # --- 4. Loop and Deploy Agents ---
 if [ "$NUM_AGENTS" -gt 0 ]; then
     echo ""
-    echo "=== Starting Agent Deployment ($NUM_AGENTS agent(s)) ==="
 
     LAST_JOB_NAME=""
     LAST_CONFIG_FILE=""
@@ -188,23 +185,17 @@ if [ "$NUM_AGENTS" -gt 0 ]; then
 
     # --- 5. Final Summary ---
     echo ""
-    echo "=== Deployment Complete ==="
     echo "Launched $NUM_AGENTS agent(s) for sweep:"
     echo "  Sweep Name: $SWEEP_NAME"
     echo "  Sweep ID: $SWEEP_ID"
-    echo ""
-    echo "The last agent created was:"
-    echo "  Job Name: $LAST_JOB_NAME"
-    echo "  Config File: $LAST_CONFIG_FILE"
     echo ""
 
     if [ -n "$FULL_AGENT_CMD" ]; then
         echo "To monitor the sweep, run:"
         echo "$FULL_AGENT_CMD"
-    else
-        echo "To monitor the sweep, run:"
-        echo "wandb agent <username>/<project>/$SWEEP_ID"
-        echo "(Replace <username>/<project> with your wandb username and project name)"
+        echo "kubectl get jobs"
+        echo "or"
+        echo "kubectl get pods"
     fi
 else
     # This block will run if NUM_AGENTS was 0
