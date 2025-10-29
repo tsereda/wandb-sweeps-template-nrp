@@ -85,7 +85,7 @@ echo "✓ Extracted new sweep ID: $SWEEP_ID"
 
 
 # --- 3. Check for Existing Jobs ---
-# --- NEW: This entire section is added to check/delete jobs before looping ---
+# --- MODIFIED: This section now checks for pods and their age ---
 echo ""
 echo "--- Checking for existing jobs for '$SWEEP_NAME' ---"
 EXISTING_JOB_NAMES=$(kubectl get jobs -o name 2>/dev/null | grep "sweep-${SWEEP_NAME}-" | sed 's:^job.batch/::')
@@ -93,12 +93,43 @@ EXISTING_JOB_NAMES=$(kubectl get jobs -o name 2>/dev/null | grep "sweep-${SWEEP_
 STARTING_SWEEP_NUMBER=1 # Default
 
 if [ -n "$EXISTING_JOB_NAMES" ]; then
-    echo "   Found existing jobs:"
-    # Indent the list for clarity
-    echo "$EXISTING_JOB_NAMES" | sed 's/^/     /'
+    # Define ANSI color codes for bolding
+    BOLD=$'\033[1m'
+    NORMAL=$'\033[0m'
     
-    # Ask for confirmation
-    read -p "   Do you want to delete these existing jobs? (y/n): " user_response
+    echo "   Found existing jobs and their associated pods:"
+    
+    # Loop through each job name found
+    echo "$EXISTING_JOB_NAMES" | while read -r job_name; do
+        echo "     Job: $job_name"
+        
+        # Get all pods for this job using the job-name selector
+        # The default 'kubectl get pods' output includes a human-readable AGE column at the end
+        POD_LIST_OUTPUT=$(kubectl get pods --selector="job-name=$job_name" --no-headers 2>/dev/null)
+        
+        if [ -n "$POD_LIST_OUTPUT" ]; then
+            # If pods were found, loop through each line of output
+            echo "$POD_LIST_OUTPUT" | while read -r pod_line; do
+                # Use awk to parse the line:
+                # $1 = POD NAME
+                # $3 = STATUS
+                # $NF = LAST COLUMN (AGE)
+                POD_NAME=$(echo "$pod_line" | awk '{print $1}')
+                POD_STATUS=$(echo "$pod_line" | awk '{print $3}')
+                POD_AGE=$(echo "$pod_line" | awk '{print $NF}')
+                
+                # Print the bolded pod info
+                echo "       ${BOLD}- Pod: $POD_NAME (Status: $POD_STATUS, Age: $POD_AGE)${NORMAL}"
+            done
+        else
+            echo "       (No running or completed pods found for this job)"
+        fi
+    done
+    
+    echo "" # Add a newline for spacing
+    
+    # Ask for confirmation, now with bolding
+    read -p "   ${BOLD}Are you sure you want to delete all listed jobs and their pods? (y/n): ${NORMAL} " user_response
     
     case "$user_response" in
         [yY]|[yY][eE][sS])
@@ -125,7 +156,6 @@ fi
 
 
 # --- 4. Loop and Deploy Agents ---
-# *** MODIFIED: Renumbered from 3, loop logic is updated ***
 echo ""
 echo "=== Starting Agent Deployment ($NUM_AGENTS agent(s)) ==="
 
@@ -133,18 +163,14 @@ echo "=== Starting Agent Deployment ($NUM_AGENTS agent(s)) ==="
 LAST_JOB_NAME=""
 LAST_CONFIG_FILE=""
 
-# *** MODIFIED: Loop from 0 to (N-1) to make numbering simple ***
 for i in $(seq 0 $((NUM_AGENTS - 1)))
 do
-    # *** MODIFIED: Calculate the sweep number based on start number and loop index ***
     SWEEP_NUMBER=$((STARTING_SWEEP_NUMBER + i))
     CURRENT_AGENT_NUM=$((i + 1))
 
     echo ""
     echo "--- Deploying Agent $CURRENT_AGENT_NUM of $NUM_AGENTS (Job Number: $SWEEP_NUMBER) ---"
     
-    # Step A (Finding job number) is no longer needed inside the loop
-
     # Step B: Generate agent config file
     JOB_NAME="sweep-${SWEEP_NAME}-${SWEEP_NUMBER}"
     CONFIG_FILE="agent-${SWEEP_NAME}-${SWEEP_NUMBER}.yml"
@@ -153,7 +179,6 @@ do
     LAST_JOB_NAME=$JOB_NAME
     LAST_CONFIG_FILE=$CONFIG_FILE
 
-    # *** MODIFIED: Renumbered from "2." ***
     echo "1. Generating agent config:"
     echo "   Job name: $JOB_NAME"
     echo "   Config file: $CONFIG_FILE"
@@ -167,7 +192,6 @@ do
     echo "   ✓ Created: $CONFIG_FILE"
 
     # Step C: Apply kubernetes configuration
-    # *** MODIFIED: Renumbered from "3." ***
     echo "2. Applying kubernetes configuration..."
     kubectl apply -f "$CONFIG_FILE"
     echo "   ✓ Applied $CONFIG_FILE to kubernetes"
@@ -176,7 +200,6 @@ done
 
 
 # --- 5. Final Summary ---
-# *** MODIFIED: Renumbered from 4 ***
 echo ""
 echo "=== Deployment Complete ==="
 echo "Launched $NUM_AGENTS agent(s) for sweep:"
