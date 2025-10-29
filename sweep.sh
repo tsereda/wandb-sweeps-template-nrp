@@ -44,7 +44,6 @@ echo "Creating new wandb sweep from $SWEEP_FILE..."
 
 # Capture both stdout and stderr
 SWEEP_OUTPUT=$(wandb sweep "$SWEEP_FILE" 2>&1)
-echo "Wandb output:"
 echo "$SWEEP_OUTPUT"
 
 # Extract sweep ID
@@ -149,61 +148,68 @@ if [ -n "$EXISTING_JOB_NAMES" ]; then
     # --- END MODIFIED BLOCK ---
     
 else
-    echo "No existing jobs found. Starting from 1."
+    echo "No existing jobs found."
     STARTING_SWEEP_NUMBER=1
 fi
 
-
 # --- 4. Loop and Deploy Agents ---
-echo ""
-echo "=== Starting Agent Deployment ($NUM_AGENTS agent(s)) ==="
+if [ "$NUM_AGENTS" -gt 0 ]; then
+    echo ""
+    echo "=== Starting Agent Deployment ($NUM_AGENTS agent(s)) ==="
 
-LAST_JOB_NAME=""
-LAST_CONFIG_FILE=""
+    LAST_JOB_NAME=""
+    LAST_CONFIG_FILE=""
 
-for i in $(seq 0 $((NUM_AGENTS - 1)))
-do
-    SWEEP_NUMBER=$((STARTING_SWEEP_NUMBER + i))
-    CURRENT_AGENT_NUM=$((i + 1))
-    JOB_NAME="sweep-${SWEEP_NAME}-${SWEEP_NUMBER}"
-    CONFIG_FILE="agent-${SWEEP_NAME}-${SWEEP_NUMBER}.yml"
-    
-    echo "--- Deploying Agent $CURRENT_AGENT_NUM/$NUM_AGENTS (Job: $JOB_NAME) ---"
-    
-    LAST_JOB_NAME=$JOB_NAME
-    LAST_CONFIG_FILE=$CONFIG_FILE
+    for i in $(seq 0 $((NUM_AGENTS - 1)))
+    do
+        SWEEP_NUMBER=$((STARTING_SWEEP_NUMBER + i))
+        CURRENT_AGENT_NUM=$((i + 1))
+        JOB_NAME="sweep-${SWEEP_NAME}-${SWEEP_NUMBER}"
+        CONFIG_FILE="agent-${SWEEP_NAME}-${SWEEP_NUMBER}.yml"
+        
+        echo "--- Deploying Agent $CURRENT_AGENT_NUM/$NUM_AGENTS (Job: $JOB_NAME) ---"
+        
+        LAST_JOB_NAME=$JOB_NAME
+        LAST_CONFIG_FILE=$CONFIG_FILE
 
-    # 1. Generate agent config file
-    sed -e "s/{SWEEP_NAME}/$SWEEP_NAME/g" \
-        -e "s/{SWEEP_NUMBER}/$SWEEP_NUMBER/g" \
-        -e "s/{SWEEP_ID}/$SWEEP_ID/g" \
-        template.yml > "$CONFIG_FILE"
-    echo "   Generated config: $CONFIG_FILE"
+        # 1. Generate agent config file
+        sed -e "s/{SWEEP_NAME}/$SWEEP_NAME/g" \
+            -e "s/{SWEEP_NUMBER}/$SWEEP_NUMBER/g" \
+            -e "s/{SWEEP_ID}/$SWEEP_ID/g" \
+            template.yml > "$CONFIG_FILE"
+        echo "   Generated config: $CONFIG_FILE"
 
-    # 2. Apply kubernetes configuration
-    kubectl apply -f "$CONFIG_FILE"
-    echo "   Applied config to kubernetes."
+        # 2. Apply kubernetes configuration
+        kubectl apply -f "$CONFIG_FILE"
+        echo "   Applied config to kubernetes."
 
-done
+    done
 
 
-# --- 5. Final Summary ---
-echo ""
-echo "=== Deployment Complete ==="
-echo "Launched $NUM_AGENTS agent(s) for sweep:"
-echo "  Sweep Name: $SWEEP_NAME"
-echo "  Sweep ID: $SWEEP_ID"
-echo ""
-echo "The last agent created was:"
-echo "  Job Name: $LAST_JOB_NAME"
-echo "  Config File: $LAST_CONFIG_FILE"
-echo ""
+    # --- 5. Final Summary ---
+    echo ""
+    echo "=== Deployment Complete ==="
+    echo "Launched $NUM_AGENTS agent(s) for sweep:"
+    echo "  Sweep Name: $SWEEP_NAME"
+    echo "  Sweep ID: $SWEEP_ID"
+    echo ""
+    echo "The last agent created was:"
+    echo "  Job Name: $LAST_JOB_NAME"
+    echo "  Config File: $LAST_CONFIG_FILE"
+    echo ""
 
-if [ -n "$FULL_AGENT_CMD" ]; then
-    echo "To monitor the sweep, run:"
-    echo "$FULL_AGENT_CMD"
+    if [ -n "$FULL_AGENT_CMD" ]; then
+        echo "To monitor the sweep, run:"
+        echo "$FULL_AGENT_CMD"
+    else
+        echo "To monitor the sweep, run:"
+        echo "wandb agent <username>/<project>/$SWEEP_ID"
+        echo "(Replace <username>/<project> with your wandb username and project name)"
+    fi
 else
-    echo "To monitor the sweep, run:"
-    echo "wandb agent <username>/<project>/$SWEEP_ID"
-    echo "(Replace <username>/<project> with your wandb username and project name)"
+    # This block will run if NUM_AGENTS was 0
+    echo ""
+    echo "=== No Agents Requested ==="
+    echo "Number of agents was 0. No new jobs were deployed."
+    echo "Sweep ID: $SWEEP_ID"
 fi
