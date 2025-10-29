@@ -1,6 +1,5 @@
 1. get wandb key from wandb.ai
-2. create secret wandb in kubernetes (wandb_credentials)
-ex. kubectl create secret wandb-credentials ...
-3. wandb sweep sweep.yml
-4. python createsweepyml.py SWEEP_ID
-4. kubectl apply -f agent-#####.yaml
+2. kubectl create secret generic NAME_OF_SECRET --from-literal=key=YOUR_WANDB_KEY
+3. chmod +x sweep.sh
+4. ./sweep.sh
+5. python sweepyml.py SWEEP_ID
