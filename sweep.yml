@@ -10,3 +10,5 @@ parameters:
     max: 0.1
   batch_size:
     values: [32, 64, 128]
+  epochs:
+    values: [20]
