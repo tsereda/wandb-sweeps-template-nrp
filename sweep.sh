@@ -16,11 +16,6 @@ SWEEP_FILE="sweep.yml"
 
 # --- Parse positional argument for number of agents ---
 if [ $# -eq 1 ]; then
-    if ! [[ "$1" =~ ^[0-9]+$ ]] || [ "$1" -eq 0 ]; then
-        echo "Error: Argument must be a positive integer for the number of agents."
-        echo "Usage: $0 [NUM_AGENTS]"
-        exit 1
-    fi
     NUM_AGENTS=$1
     echo "Will launch $NUM_AGENTS agent(s)."
 elif [ $# -gt 1 ]; then
@@ -28,7 +23,6 @@ elif [ $# -gt 1 ]; then
     echo "Usage: $0 [NUM_AGENTS]"
     exit 1
 fi
-
 
 echo "Using sweep file: $SWEEP_FILE"
 
@@ -46,12 +40,10 @@ fi
 
 
 # --- 2. Create New Sweep ID ---
-echo ""
 echo "Creating new wandb sweep from $SWEEP_FILE..."
 
 # Capture both stdout and stderr
 SWEEP_OUTPUT=$(wandb sweep "$SWEEP_FILE" 2>&1)
-
 echo "Wandb output:"
 echo "$SWEEP_OUTPUT"
 
@@ -63,8 +55,7 @@ FULL_AGENT_CMD=""
 FULL_AGENT_CMD=$(echo "$SWEEP_OUTPUT" | grep -oE 'wandb agent [^/]+/[^/]+/[a-zA-Z0-9]+' | head -1)
 
 if [ -n "$FULL_AGENT_CMD" ]; then
-    # Extract just the sweep ID from the full command
-    SWEEP_ID=$(echo "$FULL_AGENT_CMD" | sed 's/.*\///')
+    SWEEP_ID=$(echo "$FULL_AGENT_CMD" | sed 's/.*\///') # Extract just the sweep ID
 else
     # Method 2: Look for URL pattern
     SWEEP_ID=$(echo "$SWEEP_OUTPUT" | grep -oE 'https://wandb\.ai/[^/]+/[^/]+/sweeps/([a-zA-Z0-9]+)' | sed 's/.*sweeps\///' | head -1)
@@ -85,72 +76,80 @@ echo "✓ Extracted new sweep ID: $SWEEP_ID"
 
 
 # --- 3. Check for Existing Jobs ---
-# --- MODIFIED: This section now checks for pods and their age ---
 echo ""
 echo "--- Checking for existing jobs for '$SWEEP_NAME' ---"
 EXISTING_JOB_NAMES=$(kubectl get jobs -o name 2>/dev/null | grep "sweep-${SWEEP_NAME}-" | sed 's:^job.batch/::')
-
-STARTING_SWEEP_NUMBER=1 # Default
+STARTING_SWEEP_NUMBER=1
 
 if [ -n "$EXISTING_JOB_NAMES" ]; then
-    # Define ANSI color codes for bolding
     BOLD=$'\033[1m'
     NORMAL=$'\033[0m'
     
-    echo "   Found existing jobs and their associated pods:"
+    JOB_COUNT=$(echo "$EXISTING_JOB_NAMES" | grep -c .)
+    JOB_WORD=$([ "$JOB_COUNT" -eq 1 ] && echo "job" || echo "jobs")
+
+    # List all found jobs and their pods
     
-    # Loop through each job name found
-    echo "$EXISTING_JOB_NAMES" | while read -r job_name; do
-        echo "     Job: $job_name"
+    echo "Found $JOB_COUNT existing $JOB_WORD:"
+    # Indent the list of jobs for clarity
+    echo "$EXISTING_JOB_NAMES" | sed 's/^/  /'
+
+    JOB_LIST_CSV=$(echo "$EXISTING_JOB_NAMES" | tr '\n' ',' | sed 's/,$//')
+    
+    echo ""
+    echo "Associated pods:"
+    # Get all pods, sort by creation time
+    POD_LIST=$(kubectl get pods --selector="job-name in ($JOB_LIST_CSV)" --no-headers 2>/dev/null)
+    
+    if [ -n "$POD_LIST" ]; then
+        echo "$POD_LIST" | sed 's/^/  /'
         
-        # Get all pods for this job using the job-name selector
-        # The default 'kubectl get pods' output includes a human-readable AGE column at the end
-        POD_LIST_OUTPUT=$(kubectl get pods --selector="job-name=$job_name" --no-headers 2>/dev/null)
-        
-        if [ -n "$POD_LIST_OUTPUT" ]; then
-            # If pods were found, loop through each line of output
-            echo "$POD_LIST_OUTPUT" | while read -r pod_line; do
-                # Use awk to parse the line:
-                # $1 = POD NAME
-                # $3 = STATUS
-                # $NF = LAST COLUMN (AGE)
-                POD_NAME=$(echo "$pod_line" | awk '{print $1}')
-                POD_STATUS=$(echo "$pod_line" | awk '{print $3}')
-                POD_AGE=$(echo "$pod_line" | awk '{print $NF}')
-                
-                # Print the bolded pod info
-                echo "       ${BOLD}- Pod: $POD_NAME (Status: $POD_STATUS, Age: $POD_AGE)${NORMAL}"
-            done
-        else
-            echo "       (No running or completed pods found for this job)"
-        fi
-    done
+        # We still need the oldest pod info for the second confirmation
+        OLDEST_POD_LINE=$(echo "$POD_LIST" | head -1)
+        OLDEST_POD_NAME=$(echo "$OLDEST_POD_LINE" | awk '{print $1}')
+        OLDEST_POD_AGE=$(echo "$OLDEST_POD_LINE" | awk '{print $NF}')
+    else
+        echo "  No running or completed pods found for these jobs."
+        OLDEST_POD_NAME="<unknown>"
+        OLDEST_POD_AGE="<unknown>"
+    fi
+    echo "" # Add a blank line before the prompt
+
+
+    # --- MODIFIED BLOCK: Exit if user cancels deletion ---
+    # Two-step confirmation
+    read -p "Delete all $JOB_COUNT listed $JOB_WORD? (y/n): " confirm1
     
-    echo "" # Add a newline for spacing
-    
-    # Ask for confirmation, now with bolding
-    read -p "   ${BOLD}Are you sure you want to delete all listed jobs and their pods? (y/n): ${NORMAL} " user_response
-    
-    case "$user_response" in
+    case "$confirm1" in
         [yY]|[yY][eE][sS])
-            # User said YES
-            echo "   Deleting jobs..."
-            # Pipe names to xargs to handle multiple jobs safely
-            echo "$EXISTING_JOB_NAMES" | xargs kubectl delete job
-            echo "   ✓ Jobs deleted. Starting new agents from number 1."
-            STARTING_SWEEP_NUMBER=1
+            # The oldest pod info is still used here as a final safety check
+            read -p "${BOLD}ARE YOU SURE? (Oldest pod: '$OLDEST_POD_NAME', Age: $OLDEST_POD_AGE) (y/n): ${NORMAL}" confirm2
+            case "$confirm2" in
+                [yY]|[yY][eE][sS])
+                    echo "Deleting $JOB_COUNT $JOB_WORD..."
+                    echo "$EXISTING_JOB_NAMES" | xargs kubectl delete job
+                    echo "✓ Jobs deleted. Starting new agents from 1."
+                    STARTING_SWEEP_NUMBER=1
+                    ;;
+                *)
+                    # --- CHANGE: Exit on 'no' ---
+                    echo "Deletion cancelled. Exiting."
+                    exit 0
+                    # --- END CHANGE ---
+                    ;;
+            esac
             ;;
         *)
-            # User said NO (or anything else)
-            echo "   Keeping existing jobs."
-            # Find last number and increment
-            LAST_NUMBER=$(echo "$EXISTING_JOB_NAMES" | sed "s/.*sweep-${SWEEP_NAME}-//" | sort -n | tail -1)
-            STARTING_SWEEP_NUMBER=$((LAST_NUMBER + 1))
-            echo "   New agents will start from number $STARTING_SWEEP_NUMBER."
+            # --- CHANGE: Exit on 'no' ---
+            echo "Keeping existing jobs. Exiting."
+            exit 0
+            # --- END CHANGE ---
             ;;
     esac
+    # --- END MODIFIED BLOCK ---
+    
 else
-    echo "   No existing jobs found. Starting from number 1."
+    echo "No existing jobs found. Starting from 1."
     STARTING_SWEEP_NUMBER=1
 fi
 
@@ -159,7 +158,6 @@ fi
 echo ""
 echo "=== Starting Agent Deployment ($NUM_AGENTS agent(s)) ==="
 
-# Store the name of the last created job/config for the summary
 LAST_JOB_NAME=""
 LAST_CONFIG_FILE=""
 
@@ -167,34 +165,24 @@ for i in $(seq 0 $((NUM_AGENTS - 1)))
 do
     SWEEP_NUMBER=$((STARTING_SWEEP_NUMBER + i))
     CURRENT_AGENT_NUM=$((i + 1))
-
-    echo ""
-    echo "--- Deploying Agent $CURRENT_AGENT_NUM of $NUM_AGENTS (Job Number: $SWEEP_NUMBER) ---"
-    
-    # Step B: Generate agent config file
     JOB_NAME="sweep-${SWEEP_NAME}-${SWEEP_NUMBER}"
     CONFIG_FILE="agent-${SWEEP_NAME}-${SWEEP_NUMBER}.yml"
     
-    # Store for final summary
+    echo "--- Deploying Agent $CURRENT_AGENT_NUM/$NUM_AGENTS (Job: $JOB_NAME) ---"
+    
     LAST_JOB_NAME=$JOB_NAME
     LAST_CONFIG_FILE=$CONFIG_FILE
 
-    echo "1. Generating agent config:"
-    echo "   Job name: $JOB_NAME"
-    echo "   Config file: $CONFIG_FILE"
-
-    # Replace {SWEEP_NAME}, {SWEEP_NUMBER}, and {SWEEP_ID} in template
+    # 1. Generate agent config file
     sed -e "s/{SWEEP_NAME}/$SWEEP_NAME/g" \
         -e "s/{SWEEP_NUMBER}/$SWEEP_NUMBER/g" \
         -e "s/{SWEEP_ID}/$SWEEP_ID/g" \
         template.yml > "$CONFIG_FILE"
+    echo "   Generated config: $CONFIG_FILE"
 
-    echo "   ✓ Created: $CONFIG_FILE"
-
-    # Step C: Apply kubernetes configuration
-    echo "2. Applying kubernetes configuration..."
+    # 2. Apply kubernetes configuration
     kubectl apply -f "$CONFIG_FILE"
-    echo "   ✓ Applied $CONFIG_FILE to kubernetes"
+    echo "   Applied config to kubernetes."
 
 done
 
